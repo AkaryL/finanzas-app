@@ -54,6 +54,17 @@ INSERT INTO gastos (nombre, monto, dia_pago, quincena, categoria, notas) VALUES
   ('Nu Crédito', 12822, 20, 2, 'credito', 'Pago tarjeta Nu - se puede modificar'),
   ('Transporte', 1000, 1, 1, 'transporte', 'Apartado mensual para transporte');
 
+-- Tabla de movimientos (registrar pagos, retiros, ingresos extra, etc.)
+CREATE TABLE movimientos (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  tipo VARCHAR(30) NOT NULL CHECK (tipo IN ('pago_adelantado', 'gasto_extra', 'ingreso_extra', 'retiro_ahorro')),
+  descripcion VARCHAR(200) NOT NULL,
+  monto NUMERIC(12,2) NOT NULL,
+  origen VARCHAR(50) DEFAULT 'saldo_cuenta', -- de dónde sale el dinero: saldo_cuenta, ahorro_auto
+  destino VARCHAR(100), -- a qué se aplica: ej "Nu Crédito", "BBVA"
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
 -- Habilitar Row Level Security (opcional, si usas auth)
 -- ALTER TABLE configuracion ENABLE ROW LEVEL SECURITY;
 -- ALTER TABLE gastos ENABLE ROW LEVEL SECURITY;
@@ -67,3 +78,6 @@ ALTER TABLE simulaciones ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow all on configuracion" ON configuracion FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all on gastos" ON gastos FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all on simulaciones" ON simulaciones FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE movimientos ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all on movimientos" ON movimientos FOR ALL USING (true) WITH CHECK (true);

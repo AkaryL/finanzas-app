@@ -4,11 +4,13 @@ import Dashboard from './components/Dashboard'
 import GastosTable from './components/GastosTable'
 import Simulador from './components/Simulador'
 import Recomendaciones from './components/Recomendaciones'
+import Movimientos from './components/Movimientos'
 import './App.css'
 
 const TABS = [
   { id: 'dashboard', label: 'Resumen', icon: '📊' },
   { id: 'gastos', label: 'Gastos', icon: '💳' },
+  { id: 'movimientos', label: 'Movimientos', icon: '📝' },
   { id: 'simulador', label: 'Simulador', icon: '🔍' },
   { id: 'recomendaciones', label: 'Consejos', icon: '💡' },
 ]
@@ -195,6 +197,14 @@ function App() {
           onUpdate={updateGasto}
           onDelete={deleteGasto}
           onToggle={toggleGasto}
+        />
+      )}
+
+      {activeTab === 'movimientos' && (
+        <Movimientos
+          config={config}
+          gastosActivos={gastos.filter(g => g.activo)}
+          onConfigUpdate={(updates) => setConfig(prev => ({ ...prev, ...updates }))}
         />
       )}
 
