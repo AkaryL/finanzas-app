@@ -41,12 +41,25 @@ export default function GastosTable({ data, pagosDeudas, onAdd, onUpdate, onDele
   const now = new Date()
   const mesActual = now.getMonth() + 1
   const anioActual = now.getFullYear()
-  const [mesVista, setMesVista] = useState(mesActual)
-  const [anioVista, setAnioVista] = useState(anioActual)
-  const mesLabel = MESES[mesVista - 1] + ' ' + anioVista
-
   const mesSiguiente = mesActual === 12 ? 1 : mesActual + 1
   const anioSiguiente = mesActual === 12 ? anioActual + 1 : anioActual
+
+  // Calcular créditos del mes actual para decidir qué mes mostrar por defecto
+  const creditosMesActual = gastos.filter(g => {
+    if (g.categoria !== 'credito' || !g.activo) return false
+    if (g.mes_pago && g.anio_pago) return g.mes_pago === mesActual && g.anio_pago === anioActual
+    return true
+  })
+  const todosPagadosMesActual = creditosMesActual.length === 0 || creditosMesActual.every(g =>
+    pagosDeudas.find(p => p.gasto_id === g.id && p.mes === mesActual && p.anio === anioActual)
+  )
+
+  // Si ya no hay pendientes este mes, mostrar el siguiente por defecto
+  const mesInicial = todosPagadosMesActual ? mesSiguiente : mesActual
+  const anioInicial = todosPagadosMesActual ? anioSiguiente : anioActual
+  const [mesVista, setMesVista] = useState(mesInicial)
+  const [anioVista, setAnioVista] = useState(anioInicial)
+  const mesLabel = MESES[mesVista - 1] + ' ' + anioVista
 
   // Helpers para pagos
   const getPagoDeuda = (gastoId) => {
