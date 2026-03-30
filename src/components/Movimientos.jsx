@@ -222,7 +222,13 @@ export default function Movimientos({ config, gastosActivos, pagosDeudas = [], o
       }
     }
 
-    // 6. Actualizar lista local
+    // 6. Si es pago adelantado y se seleccionó un crédito, registrar pago de deuda
+    if (form.tipo === 'pago_adelantado' && form.gastoId && onRegistrarPago) {
+      const [mesStr, anioStr] = form.mesPago.split('-')
+      await onRegistrarPago(form.gastoId, form.origen, `Pago adelantado: ${form.descripcion}`, parseInt(mesStr), parseInt(anioStr))
+    }
+
+    // 7. Actualizar lista local
     setMovimientos(prev => prev.map(m => m.id === editingId ? {
       ...m,
       tipo: form.tipo,
@@ -280,9 +286,26 @@ export default function Movimientos({ config, gastosActivos, pagosDeudas = [], o
   const esGasto = form.tipo !== 'ingreso_extra'
   const origenLabel = form.origen === 'saldo_cuenta' ? 'saldo en cuenta' : 'ahorro del coche'
   const montoNum = parseFloat(form.monto) || 0
-  const disponible = form.origen === 'saldo_cuenta'
+
+  // Al editar, el saldo disponible incluye el monto original (porque se revierte)
+  const movOriginalEdit = editingId ? movimientos.find(m => m.id === editingId) : null
+  const bonusEdicion = (() => {
+    if (!movOriginalEdit) return 0
+    const orig = movOriginalEdit
+    // Cuánto se "devuelve" al saldo del origen seleccionado al revertir el movimiento original
+    if (orig.tipo === 'ingreso_extra') return 0 // no resta de ningún origen
+    if (orig.tipo === 'retiro_ahorro') {
+      return form.origen === 'saldo_cuenta' ? -parseFloat(orig.monto) : parseFloat(orig.monto)
+    }
+    // pago_adelantado o gasto_extra: el monto original se devuelve al origen original
+    if (orig.origen === form.origen) return parseFloat(orig.monto)
+    return 0
+  })()
+
+  const disponibleBase = form.origen === 'saldo_cuenta'
     ? parseFloat(config?.saldo_cuenta || 0)
     : parseFloat(config?.ahorro_actual_auto || 0)
+  const disponible = disponibleBase + bonusEdicion
 
   return (
     <div className="card">
@@ -385,11 +408,21 @@ export default function Movimientos({ config, gastosActivos, pagosDeudas = [], o
               <div className="form-group">
                 <label className="form-label">Tomar dinero de</label>
                 <select className="form-select" value={form.origen} onChange={e => handleChange('origen', e.target.value)}>
-                  {ORIGENES.map(o => (
-                    <option key={o.value} value={o.value}>{o.label} ({formatMoney(
-                      o.value === 'saldo_cuenta' ? config?.saldo_cuenta : config?.ahorro_actual_auto
-                    )})</option>
-                  ))}
+                  {ORIGENES.map(o => {
+                    const base = o.value === 'saldo_cuenta' ? parseFloat(config?.saldo_cuenta || 0) : parseFloat(config?.ahorro_actual_auto || 0)
+                    // Al editar, sumar de vuelta lo que el movimiento original restó de esta cuenta
+                    let bonus = 0
+                    if (movOriginalEdit && movOriginalEdit.tipo !== 'ingreso_extra') {
+                      if (movOriginalEdit.tipo === 'retiro_ahorro') {
+                        bonus = o.value === 'ahorro_auto' ? parseFloat(movOriginalEdit.monto) : -parseFloat(movOriginalEdit.monto)
+                      } else if (movOriginalEdit.origen === o.value) {
+                        bonus = parseFloat(movOriginalEdit.monto)
+                      }
+                    }
+                    return (
+                      <option key={o.value} value={o.value}>{o.label} ({formatMoney(base + bonus)})</option>
+                    )
+                  })}
                 </select>
               </div>
               <div className="form-group">
