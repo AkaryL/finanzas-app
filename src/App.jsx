@@ -209,11 +209,26 @@ function App() {
   }
 
   // Computed values
+  const now2 = new Date()
+  const mesAhora = now2.getMonth() + 1
+  const anioAhora = now2.getFullYear()
+
+  // Monto efectivo: para créditos puntuales, restar lo ya abonado
+  const getMontoEfectivo = (g) => {
+    const monto = parseFloat(g.monto)
+    if (g.categoria !== 'credito' || !g.mes_pago || !g.anio_pago) return monto
+    // Solo créditos puntuales: restar abonos
+    const pago = pagosDeudas.find(p => p.gasto_id === g.id && p.mes === g.mes_pago && p.anio === g.anio_pago)
+    if (!pago) return monto
+    const abonado = parseFloat(pago.monto_pagado || 0)
+    return Math.max(0, monto - abonado)
+  }
+
   const gastosActivos = gastos.filter(g => g.activo)
   const gastosQ1 = gastosActivos.filter(g => g.quincena === 1)
   const gastosQ2 = gastosActivos.filter(g => g.quincena === 2)
-  const totalQ1 = gastosQ1.reduce((sum, g) => sum + parseFloat(g.monto), 0)
-  const totalQ2 = gastosQ2.reduce((sum, g) => sum + parseFloat(g.monto), 0)
+  const totalQ1 = gastosQ1.reduce((sum, g) => sum + getMontoEfectivo(g), 0)
+  const totalQ2 = gastosQ2.reduce((sum, g) => sum + getMontoEfectivo(g), 0)
   const totalGastos = totalQ1 + totalQ2
   const ingresoMensual = config ? parseFloat(config.ingreso_quincenal) * 2 : 0
   const sobrante = ingresoMensual - totalGastos
