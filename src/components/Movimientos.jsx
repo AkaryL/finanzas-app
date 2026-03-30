@@ -34,6 +34,8 @@ const TIPO_CLASSES = {
 export default function Movimientos({ config, gastosActivos, pagosDeudas = [], onConfigUpdate, onRegistrarPago }) {
   const [movimientos, setMovimientos] = useState([])
   const [showForm, setShowForm] = useState(false)
+  const [editingId, setEditingId] = useState(null)
+  const [confirmDelete, setConfirmDelete] = useState(null)
   const now = new Date()
   const mesActual = now.getMonth() + 1
   const anioActual = now.getFullYear()
@@ -41,7 +43,7 @@ export default function Movimientos({ config, gastosActivos, pagosDeudas = [], o
   const anioSiguiente = mesActual === 12 ? anioActual + 1 : anioActual
   const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
 
-  const [form, setForm] = useState({
+  const emptyForm = {
     tipo: 'pago_adelantado',
     descripcion: '',
     monto: '',
@@ -49,7 +51,9 @@ export default function Movimientos({ config, gastosActivos, pagosDeudas = [], o
     destino: '',
     gastoId: '',
     mesPago: `${mesSiguiente}-${anioSiguiente}`,
-  })
+  }
+
+  const [form, setForm] = useState(emptyForm)
 
   useEffect(() => {
     supabase
@@ -122,8 +126,155 @@ export default function Movimientos({ config, gastosActivos, pagosDeudas = [], o
     }
 
     setMovimientos(prev => [mov, ...prev])
-    setForm({ tipo: 'pago_adelantado', descripcion: '', monto: '', origen: 'saldo_cuenta', destino: '', gastoId: '', mesPago: `${mesSiguiente}-${anioSiguiente}` })
+    setForm(emptyForm)
     setShowForm(false)
+    setEditingId(null)
+  }
+
+  // Calcular el impacto en saldo de un movimiento (para revertirlo)
+  const calcImpacto = (mov) => {
+    const monto = parseFloat(mov.monto)
+    if (mov.tipo === 'ingreso_extra') {
+      return { saldo_cuenta: -monto } // revertir: quitar lo que se sumó
+    } else if (mov.tipo === 'retiro_ahorro') {
+      return { ahorro_actual_auto: monto, saldo_cuenta: -monto }
+    } else {
+      // pago_adelantado o gasto_extra
+      if (mov.origen === 'saldo_cuenta') {
+        return { saldo_cuenta: monto } // revertir: devolver lo que se restó
+      } else {
+        return { ahorro_actual_auto: monto }
+      }
+    }
+  }
+
+  const startEdit = (mov) => {
+    setForm({
+      tipo: mov.tipo,
+      descripcion: mov.descripcion,
+      monto: String(mov.monto),
+      origen: mov.origen || 'saldo_cuenta',
+      destino: mov.destino || '',
+      gastoId: '',
+      mesPago: `${mesSiguiente}-${anioSiguiente}`,
+    })
+    setEditingId(mov.id)
+    setShowForm(true)
+  }
+
+  const guardarEdicion = async () => {
+    const montoNum = parseFloat(form.monto)
+    if (!montoNum || !form.descripcion.trim()) return
+
+    const movOriginal = movimientos.find(m => m.id === editingId)
+    if (!movOriginal) return
+
+    // 1. Revertir el impacto del movimiento original
+    const reversion = calcImpacto(movOriginal)
+
+    // 2. Calcular el nuevo impacto
+    let nuevoImpacto = {}
+    if (form.tipo === 'ingreso_extra') {
+      nuevoImpacto = { saldo_cuenta: montoNum }
+    } else if (form.tipo === 'retiro_ahorro') {
+      nuevoImpacto = { ahorro_actual_auto: -montoNum, saldo_cuenta: montoNum }
+    } else {
+      if (form.origen === 'saldo_cuenta') {
+        nuevoImpacto = { saldo_cuenta: -montoNum }
+      } else {
+        nuevoImpacto = { ahorro_actual_auto: -montoNum }
+      }
+    }
+
+    // 3. Combinar reversion + nuevo impacto
+    const saldoActual = parseFloat(config.saldo_cuenta)
+    const ahorroActual = parseFloat(config.ahorro_actual_auto)
+    const deltaSaldo = (reversion.saldo_cuenta || 0) + (nuevoImpacto.saldo_cuenta || 0)
+    const deltaAhorro = (reversion.ahorro_actual_auto || 0) + (nuevoImpacto.ahorro_actual_auto || 0)
+
+    const configUpdates = {}
+    if (deltaSaldo !== 0) configUpdates.saldo_cuenta = saldoActual + deltaSaldo
+    if (deltaAhorro !== 0) configUpdates.ahorro_actual_auto = ahorroActual + deltaAhorro
+
+    // 4. Actualizar movimiento en DB
+    const { error } = await supabase
+      .from('movimientos')
+      .update({
+        tipo: form.tipo,
+        descripcion: form.descripcion.trim(),
+        monto: montoNum,
+        origen: form.tipo === 'ingreso_extra' ? null : form.origen,
+        destino: form.destino.trim() || null,
+      })
+      .eq('id', editingId)
+
+    if (error) return
+
+    // 5. Actualizar configuración si hay cambios
+    if (Object.keys(configUpdates).length > 0) {
+      const { error: configError } = await supabase
+        .from('configuracion')
+        .update({ ...configUpdates, updated_at: new Date().toISOString() })
+        .eq('id', config.id)
+
+      if (!configError) {
+        onConfigUpdate(configUpdates)
+      }
+    }
+
+    // 6. Actualizar lista local
+    setMovimientos(prev => prev.map(m => m.id === editingId ? {
+      ...m,
+      tipo: form.tipo,
+      descripcion: form.descripcion.trim(),
+      monto: montoNum,
+      origen: form.tipo === 'ingreso_extra' ? null : form.origen,
+      destino: form.destino.trim() || null,
+    } : m))
+
+    setForm(emptyForm)
+    setShowForm(false)
+    setEditingId(null)
+  }
+
+  const eliminarMovimiento = async (mov) => {
+    // 1. Revertir el impacto en saldo
+    const reversion = calcImpacto(mov)
+    const saldoActual = parseFloat(config.saldo_cuenta)
+    const ahorroActual = parseFloat(config.ahorro_actual_auto)
+
+    const configUpdates = {}
+    if (reversion.saldo_cuenta) configUpdates.saldo_cuenta = saldoActual + reversion.saldo_cuenta
+    if (reversion.ahorro_actual_auto) configUpdates.ahorro_actual_auto = ahorroActual + reversion.ahorro_actual_auto
+
+    // 2. Eliminar de DB
+    const { error } = await supabase
+      .from('movimientos')
+      .delete()
+      .eq('id', mov.id)
+
+    if (error) return
+
+    // 3. Revertir saldo
+    if (Object.keys(configUpdates).length > 0) {
+      const { error: configError } = await supabase
+        .from('configuracion')
+        .update({ ...configUpdates, updated_at: new Date().toISOString() })
+        .eq('id', config.id)
+
+      if (!configError) {
+        onConfigUpdate(configUpdates)
+      }
+    }
+
+    setMovimientos(prev => prev.filter(m => m.id !== mov.id))
+    setConfirmDelete(null)
+  }
+
+  const cancelForm = () => {
+    setShowForm(false)
+    setEditingId(null)
+    setForm(emptyForm)
   }
 
   const esGasto = form.tipo !== 'ingreso_extra'
@@ -137,7 +288,9 @@ export default function Movimientos({ config, gastosActivos, pagosDeudas = [], o
     <div className="card">
       <div className="card-header">
         <span className="card-title">Movimientos</span>
-        <button className="btn btn-primary btn-sm" onClick={() => setShowForm(!showForm)}>
+        <button className="btn btn-primary btn-sm" onClick={() => {
+          if (showForm) { cancelForm() } else { setShowForm(true) }
+        }}>
           {showForm ? 'Cancelar' : '+ Registrar Movimiento'}
         </button>
       </div>
@@ -268,13 +421,13 @@ export default function Movimientos({ config, gastosActivos, pagosDeudas = [], o
           )}
 
           <div style={{ marginTop: '16px', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-            <button className="btn btn-secondary" onClick={() => setShowForm(false)}>Cancelar</button>
+            <button className="btn btn-secondary" onClick={cancelForm}>Cancelar</button>
             <button
               className="btn btn-primary"
-              onClick={registrar}
-              disabled={!form.descripcion.trim() || !montoNum || (esGasto && montoNum > disponible)}
+              onClick={editingId ? guardarEdicion : registrar}
+              disabled={!form.descripcion.trim() || !montoNum || (esGasto && !editingId && montoNum > disponible)}
             >
-              Registrar
+              {editingId ? 'Guardar Cambios' : 'Registrar'}
             </button>
           </div>
         </div>
@@ -288,7 +441,7 @@ export default function Movimientos({ config, gastosActivos, pagosDeudas = [], o
       ) : (
         movimientos.map(m => (
           <div key={m.id} className="movimiento-item">
-            <div>
+            <div style={{ flex: 1 }}>
               <span className={`movimiento-tipo ${TIPO_CLASSES[m.tipo]}`}>
                 {TIPO_LABELS[m.tipo]}
               </span>
@@ -299,15 +452,56 @@ export default function Movimientos({ config, gastosActivos, pagosDeudas = [], o
                 {m.destino && ` · Para: ${m.destino}`}
               </div>
             </div>
-            <div style={{
-              fontWeight: 700,
-              fontSize: '1rem',
-              color: m.tipo === 'ingreso_extra' ? 'var(--accent)' : 'var(--danger-light)',
-            }}>
-              {m.tipo === 'ingreso_extra' ? '+' : '-'}{formatMoney(m.monto)}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{
+                fontWeight: 700,
+                fontSize: '1rem',
+                color: m.tipo === 'ingreso_extra' ? 'var(--accent)' : 'var(--danger-light)',
+              }}>
+                {m.tipo === 'ingreso_extra' ? '+' : '-'}{formatMoney(m.monto)}
+              </div>
+              <div className="actions-cell" style={{ display: 'flex', gap: '4px' }}>
+                <button
+                  className="btn-icon edit"
+                  onClick={() => startEdit(m)}
+                  title="Editar"
+                  style={{ fontSize: '0.8rem', padding: '4px 6px' }}
+                >
+                  ✎
+                </button>
+                <button
+                  className="btn-icon delete"
+                  onClick={() => setConfirmDelete(m)}
+                  title="Eliminar"
+                  style={{ fontSize: '0.8rem', padding: '4px 6px' }}
+                >
+                  ✕
+                </button>
+              </div>
             </div>
           </div>
         ))
+      )}
+      {confirmDelete && (
+        <div className="modal-overlay" onClick={() => setConfirmDelete(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '420px' }}>
+            <h2>Eliminar movimiento</h2>
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '8px', fontSize: '0.9rem' }}>
+              Se eliminará <strong style={{ color: 'var(--text-primary)' }}>{confirmDelete.descripcion}</strong> y se revertirá el saldo ({confirmDelete.tipo === 'ingreso_extra' ? '-' : '+'}{formatMoney(confirmDelete.monto)}).
+            </p>
+            <p style={{ color: 'var(--text-dim)', fontSize: '0.82rem', marginBottom: '16px' }}>
+              Esta acción no se puede deshacer.
+            </p>
+            <div className="modal-actions" style={{ justifyContent: 'center' }}>
+              <button className="btn btn-secondary" onClick={() => setConfirmDelete(null)}>
+                Cancelar
+              </button>
+              <button className="btn btn-danger" onClick={() => eliminarMovimiento(confirmDelete)}>
+                Eliminar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
