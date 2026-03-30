@@ -31,15 +31,24 @@ const TIPO_CLASSES = {
   retiro_ahorro: 'gasto',
 }
 
-export default function Movimientos({ config, gastosActivos, onConfigUpdate }) {
+export default function Movimientos({ config, gastosActivos, pagosDeudas = [], onConfigUpdate, onRegistrarPago }) {
   const [movimientos, setMovimientos] = useState([])
   const [showForm, setShowForm] = useState(false)
+  const now = new Date()
+  const mesActual = now.getMonth() + 1
+  const anioActual = now.getFullYear()
+  const mesSiguiente = mesActual === 12 ? 1 : mesActual + 1
+  const anioSiguiente = mesActual === 12 ? anioActual + 1 : anioActual
+  const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+
   const [form, setForm] = useState({
     tipo: 'pago_adelantado',
     descripcion: '',
     monto: '',
     origen: 'saldo_cuenta',
     destino: '',
+    gastoId: '',
+    mesPago: `${mesSiguiente}-${anioSiguiente}`,
   })
 
   useEffect(() => {
@@ -106,8 +115,14 @@ export default function Movimientos({ config, gastosActivos, onConfigUpdate }) {
       onConfigUpdate(updates)
     }
 
+    // Si es pago adelantado y se seleccionó un crédito, registrar el pago de deuda
+    if (form.tipo === 'pago_adelantado' && form.gastoId && onRegistrarPago) {
+      const [mesStr, anioStr] = form.mesPago.split('-')
+      await onRegistrarPago(form.gastoId, form.origen, `Pago adelantado: ${form.descripcion}`, parseInt(mesStr), parseInt(anioStr))
+    }
+
     setMovimientos(prev => [mov, ...prev])
-    setForm({ tipo: 'pago_adelantado', descripcion: '', monto: '', origen: 'saldo_cuenta', destino: '' })
+    setForm({ tipo: 'pago_adelantado', descripcion: '', monto: '', origen: 'saldo_cuenta', destino: '', gastoId: '', mesPago: `${mesSiguiente}-${anioSiguiente}` })
     setShowForm(false)
   }
 
@@ -137,6 +152,49 @@ export default function Movimientos({ config, gastosActivos, onConfigUpdate }) {
               ))}
             </select>
           </div>
+
+          {form.tipo === 'pago_adelantado' && (() => {
+            const [mesSelStr, anioSelStr] = form.mesPago.split('-')
+            const mesSel = parseInt(mesSelStr)
+            const anioSel = parseInt(anioSelStr)
+            const creditos = gastosActivos.filter(g => g.categoria === 'credito')
+            const creditosSinPagar = creditos.filter(g =>
+              !pagosDeudas.find(p => p.gasto_id === g.id && p.mes === mesSel && p.anio === anioSel)
+            )
+            return (
+              <>
+              <div className="form-group">
+                <label className="form-label">Mes al que aplica el pago</label>
+                <select className="form-select" value={form.mesPago} onChange={e => setForm(prev => ({ ...prev, mesPago: e.target.value, gastoId: '' }))}>
+                  <option value={`${mesActual}-${anioActual}`}>{MESES[mesActual - 1]} {anioActual} (mes actual)</option>
+                  <option value={`${mesSiguiente}-${anioSiguiente}`}>{MESES[mesSiguiente - 1]} {anioSiguiente} (mes siguiente)</option>
+                </select>
+              </div>
+              {creditosSinPagar.length > 0 ? (
+              <div className="form-group">
+                <label className="form-label">Aplicar a crédito (marca como pagado en Gastos)</label>
+                <select className="form-select" value={form.gastoId} onChange={e => {
+                  const gastoId = e.target.value
+                  if (gastoId) {
+                    const gasto = creditos.find(g => g.id === gastoId)
+                    if (gasto) {
+                      setForm(prev => ({ ...prev, gastoId, descripcion: `Adelanto ${gasto.nombre}`, monto: String(gasto.monto) }))
+                    } else {
+                      handleChange('gastoId', gastoId)
+                    }
+                  } else {
+                    handleChange('gastoId', '')
+                  }
+                }}>
+                  <option value="">No aplicar a ningún crédito</option>
+                  {creditosSinPagar.map(g => (
+                    <option key={g.id} value={g.id}>{g.nombre} - {formatMoney(g.monto)}</option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
+            </>)
+          })()}
 
           <div className="form-row">
             <div className="form-group">

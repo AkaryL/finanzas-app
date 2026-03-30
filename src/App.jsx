@@ -37,10 +37,15 @@ function App() {
       const mesActual = now.getMonth() + 1
       const anioActual = now.getFullYear()
 
+      const mesSiguiente = mesActual === 12 ? 1 : mesActual + 1
+      const anioSiguiente = mesActual === 12 ? anioActual + 1 : anioActual
+
       const [configRes, gastosRes, pagosRes] = await Promise.all([
         supabase.from('configuracion').select('*').limit(1).single(),
         supabase.from('gastos').select('*').order('quincena', { ascending: true }).order('dia_pago', { ascending: true }),
-        supabase.from('pagos_deudas').select('*').eq('mes', mesActual).eq('anio', anioActual),
+        supabase.from('pagos_deudas').select('*').or(
+          `and(mes.eq.${mesActual},anio.eq.${anioActual}),and(mes.eq.${mesSiguiente},anio.eq.${anioSiguiente})`
+        ),
       ])
 
       if (configRes.error) throw configRes.error
@@ -132,10 +137,10 @@ function App() {
     await updateGasto(id, { activo: !activo })
   }
 
-  const registrarPagoDeuda = async (gastoId, cuentaOrigen, notas = '') => {
+  const registrarPagoDeuda = async (gastoId, cuentaOrigen, notas = '', mesCustom = null, anioCustom = null) => {
     const now = new Date()
-    const mes = now.getMonth() + 1
-    const anio = now.getFullYear()
+    const mes = mesCustom || (now.getMonth() + 1)
+    const anio = anioCustom || now.getFullYear()
 
     const { data, error } = await supabase
       .from('pagos_deudas')
@@ -152,10 +157,10 @@ function App() {
     showToast('Pago registrado')
   }
 
-  const quitarPagoDeuda = async (gastoId) => {
+  const quitarPagoDeuda = async (gastoId, mesCustom = null, anioCustom = null) => {
     const now = new Date()
-    const mes = now.getMonth() + 1
-    const anio = now.getFullYear()
+    const mes = mesCustom || (now.getMonth() + 1)
+    const anio = anioCustom || now.getFullYear()
 
     const { error } = await supabase
       .from('pagos_deudas')
@@ -255,7 +260,9 @@ function App() {
         <Movimientos
           config={config}
           gastosActivos={gastos.filter(g => g.activo)}
+          pagosDeudas={pagosDeudas}
           onConfigUpdate={(updates) => setConfig(prev => ({ ...prev, ...updates }))}
+          onRegistrarPago={registrarPagoDeuda}
         />
       )}
 

@@ -41,11 +41,16 @@ export default function GastosTable({ data, pagosDeudas, onAdd, onUpdate, onDele
   const now = new Date()
   const mesActual = now.getMonth() + 1
   const anioActual = now.getFullYear()
-  const mesLabel = MESES[mesActual - 1] + ' ' + anioActual
+  const [mesVista, setMesVista] = useState(mesActual)
+  const [anioVista, setAnioVista] = useState(anioActual)
+  const mesLabel = MESES[mesVista - 1] + ' ' + anioVista
+
+  const mesSiguiente = mesActual === 12 ? 1 : mesActual + 1
+  const anioSiguiente = mesActual === 12 ? anioActual + 1 : anioActual
 
   // Helpers para pagos
   const getPagoDeuda = (gastoId) => {
-    return pagosDeudas.find(p => p.gasto_id === gastoId && p.mes === mesActual && p.anio === anioActual)
+    return pagosDeudas.find(p => p.gasto_id === gastoId && p.mes === mesVista && p.anio === anioVista)
   }
 
   const creditosActivos = gastos.filter(g => g.categoria === 'credito' && g.activo)
@@ -84,7 +89,7 @@ export default function GastosTable({ data, pagosDeudas, onAdd, onUpdate, onDele
 
   const handleRegistrarPago = () => {
     if (!pagoModal) return
-    onRegistrarPago(pagoModal.id, cuentaPago, notasPago)
+    onRegistrarPago(pagoModal.id, cuentaPago, notasPago, mesVista, anioVista)
     setPagoModal(null)
   }
 
@@ -94,7 +99,37 @@ export default function GastosTable({ data, pagosDeudas, onAdd, onUpdate, onDele
       {creditosActivos.length > 0 && (
         <div className="card">
           <div className="card-header">
-            <span className="card-title">Pagos de Deudas - {mesLabel}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span className="card-title">Pagos de Deudas - {mesLabel}</span>
+              <div style={{ display: 'flex', gap: '4px' }}>
+                <button
+                  className="btn btn-sm"
+                  style={{
+                    padding: '2px 10px',
+                    fontSize: '0.72rem',
+                    background: mesVista === mesActual ? 'var(--accent)' : 'var(--bg-secondary)',
+                    color: mesVista === mesActual ? '#fff' : 'var(--text-secondary)',
+                    border: 'none',
+                  }}
+                  onClick={() => { setMesVista(mesActual); setAnioVista(anioActual) }}
+                >
+                  {MESES[mesActual - 1]}
+                </button>
+                <button
+                  className="btn btn-sm"
+                  style={{
+                    padding: '2px 10px',
+                    fontSize: '0.72rem',
+                    background: mesVista === mesSiguiente ? 'var(--accent)' : 'var(--bg-secondary)',
+                    color: mesVista === mesSiguiente ? '#fff' : 'var(--text-secondary)',
+                    border: 'none',
+                  }}
+                  onClick={() => { setMesVista(mesSiguiente); setAnioVista(anioSiguiente) }}
+                >
+                  {MESES[mesSiguiente - 1]}
+                </button>
+              </div>
+            </div>
             <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
               {creditosPagados.length}/{creditosActivos.length} pagados
             </span>
@@ -141,7 +176,7 @@ export default function GastosTable({ data, pagosDeudas, onAdd, onUpdate, onDele
                           color: 'var(--accent)',
                           border: '1px solid var(--accent-dim)',
                         }}
-                        onClick={() => onQuitarPago(g.id)}
+                        onClick={() => onQuitarPago(g.id, mesVista, anioVista)}
                         title="Desmarcar pago"
                       >
                         Pagado
@@ -246,7 +281,7 @@ export default function GastosTable({ data, pagosDeudas, onAdd, onUpdate, onDele
                         pago ? (
                           <span
                             className="pago-badge pagado"
-                            onClick={() => onQuitarPago(g.id)}
+                            onClick={() => onQuitarPago(g.id, mesVista, anioVista)}
                             title={`Pagado de ${CUENTA_LABELS[pago.cuenta_origen] || pago.cuenta_origen}. Click para desmarcar.`}
                             style={{ cursor: 'pointer' }}
                           >
