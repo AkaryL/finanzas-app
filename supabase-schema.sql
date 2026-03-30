@@ -81,3 +81,19 @@ CREATE POLICY "Allow all on simulaciones" ON simulaciones FOR ALL USING (true) W
 
 ALTER TABLE movimientos ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow all on movimientos" ON movimientos FOR ALL USING (true) WITH CHECK (true);
+
+-- Tabla de pagos mensuales de deudas (para marcar si ya pagaste el mes)
+CREATE TABLE pagos_deudas (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  gasto_id UUID NOT NULL REFERENCES gastos(id) ON DELETE CASCADE,
+  mes INTEGER NOT NULL CHECK (mes >= 1 AND mes <= 12),
+  anio INTEGER NOT NULL,
+  cuenta_origen VARCHAR(50) NOT NULL DEFAULT 'saldo_cuenta', -- saldo_cuenta, ahorro_auto, efectivo, otra
+  notas TEXT,
+  fecha_pago TIMESTAMPTZ DEFAULT now(),
+  created_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(gasto_id, mes, anio) -- solo un pago por deuda por mes
+);
+
+ALTER TABLE pagos_deudas ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all on pagos_deudas" ON pagos_deudas FOR ALL USING (true) WITH CHECK (true);

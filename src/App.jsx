@@ -19,6 +19,7 @@ function App() {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [config, setConfig] = useState(null)
   const [gastos, setGastos] = useState([])
+  const [pagosDeudas, setPagosDeudas] = useState([])
   const [loading, setLoading] = useState(true)
   const [toasts, setToasts] = useState([])
 
@@ -32,9 +33,14 @@ function App() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [configRes, gastosRes] = await Promise.all([
+      const now = new Date()
+      const mesActual = now.getMonth() + 1
+      const anioActual = now.getFullYear()
+
+      const [configRes, gastosRes, pagosRes] = await Promise.all([
         supabase.from('configuracion').select('*').limit(1).single(),
         supabase.from('gastos').select('*').order('quincena', { ascending: true }).order('dia_pago', { ascending: true }),
+        supabase.from('pagos_deudas').select('*').eq('mes', mesActual).eq('anio', anioActual),
       ])
 
       if (configRes.error) throw configRes.error
@@ -42,6 +48,7 @@ function App() {
 
       setConfig(configRes.data)
       setGastos(gastosRes.data)
+      if (!pagosRes.error) setPagosDeudas(pagosRes.data || [])
     } catch (err) {
       console.error('Error fetching data:', err)
       showToast('Error al cargar datos', 'error')
@@ -125,6 +132,47 @@ function App() {
     await updateGasto(id, { activo: !activo })
   }
 
+  const registrarPagoDeuda = async (gastoId, cuentaOrigen, notas = '') => {
+    const now = new Date()
+    const mes = now.getMonth() + 1
+    const anio = now.getFullYear()
+
+    const { data, error } = await supabase
+      .from('pagos_deudas')
+      .insert([{ gasto_id: gastoId, mes, anio, cuenta_origen: cuentaOrigen, notas: notas || null }])
+      .select()
+      .single()
+
+    if (error) {
+      showToast('Error al registrar pago', 'error')
+      return
+    }
+
+    setPagosDeudas(prev => [...prev, data])
+    showToast('Pago registrado')
+  }
+
+  const quitarPagoDeuda = async (gastoId) => {
+    const now = new Date()
+    const mes = now.getMonth() + 1
+    const anio = now.getFullYear()
+
+    const { error } = await supabase
+      .from('pagos_deudas')
+      .delete()
+      .eq('gasto_id', gastoId)
+      .eq('mes', mes)
+      .eq('anio', anio)
+
+    if (error) {
+      showToast('Error al quitar pago', 'error')
+      return
+    }
+
+    setPagosDeudas(prev => prev.filter(p => !(p.gasto_id === gastoId && p.mes === mes && p.anio === anio)))
+    showToast('Pago desmarcado')
+  }
+
   // Computed values
   const gastosActivos = gastos.filter(g => g.activo)
   const gastosQ1 = gastosActivos.filter(g => g.quincena === 1)
@@ -193,10 +241,13 @@ function App() {
       {activeTab === 'gastos' && (
         <GastosTable
           data={financeData}
+          pagosDeudas={pagosDeudas}
           onAdd={addGasto}
           onUpdate={updateGasto}
           onDelete={deleteGasto}
           onToggle={toggleGasto}
+          onRegistrarPago={registrarPagoDeuda}
+          onQuitarPago={quitarPagoDeuda}
         />
       )}
 

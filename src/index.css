@@ -917,6 +917,38 @@ body {
   color: #7c83ff;
 }
 
+/* Badges de pago de deudas */
+.pago-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  transition: all 0.2s;
+}
+
+.pago-badge.pagado {
+  background: rgba(0, 212, 170, 0.15);
+  color: var(--accent);
+  border: 1px solid rgba(0, 212, 170, 0.3);
+}
+
+.pago-badge.pagado:hover {
+  background: rgba(0, 212, 170, 0.25);
+}
+
+.pago-badge.pendiente {
+  background: rgba(255, 165, 2, 0.12);
+  color: var(--warning-light);
+  border: 1px solid rgba(255, 165, 2, 0.3);
+}
+
+.pago-badge.pendiente:hover {
+  background: rgba(255, 165, 2, 0.22);
+}
+
 @media (max-width: 768px) {
   .chat-bubble { max-width: 90%; }
   .quick-questions { gap: 6px; }
