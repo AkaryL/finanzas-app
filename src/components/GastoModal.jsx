@@ -8,7 +8,10 @@ const CATEGORIAS = [
   { value: 'transporte', label: 'Transporte' },
 ]
 
+const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+
 export default function GastoModal({ gasto, onSave, onClose }) {
+  const now = new Date()
   const [form, setForm] = useState({
     nombre: gasto?.nombre || '',
     monto: gasto?.monto || '',
@@ -17,6 +20,9 @@ export default function GastoModal({ gasto, onSave, onClose }) {
     categoria: gasto?.categoria || 'fijo',
     es_mensual: gasto?.es_mensual ?? true,
     notas: gasto?.notas || '',
+    mes_pago: gasto?.mes_pago || null,
+    anio_pago: gasto?.anio_pago || null,
+    es_puntual: !!(gasto?.mes_pago),
   })
 
   const handleChange = (field, value) => {
@@ -35,7 +41,7 @@ export default function GastoModal({ gasto, onSave, onClose }) {
     e.preventDefault()
     if (!form.nombre.trim() || !form.monto) return
 
-    onSave({
+    const data = {
       nombre: form.nombre.trim(),
       monto: parseFloat(form.monto),
       dia_pago: parseInt(form.dia_pago),
@@ -44,7 +50,11 @@ export default function GastoModal({ gasto, onSave, onClose }) {
       es_mensual: form.es_mensual,
       activo: true,
       notas: form.notas.trim() || null,
-    })
+      mes_pago: (form.categoria === 'credito' && form.es_puntual) ? parseInt(form.mes_pago) : null,
+      anio_pago: (form.categoria === 'credito' && form.es_puntual) ? parseInt(form.anio_pago) : null,
+    }
+
+    onSave(data)
   }
 
   return (
@@ -118,6 +128,57 @@ export default function GastoModal({ gasto, onSave, onClose }) {
               </select>
             </div>
           </div>
+
+          {form.categoria === 'credito' && (
+            <div style={{ background: 'rgba(255,71,87,0.06)', borderRadius: '10px', padding: '16px', marginBottom: '4px' }}>
+              <div className="form-group" style={{ marginBottom: form.es_puntual ? '12px' : 0 }}>
+                <label className="form-label">Tipo de crédito</label>
+                <select
+                  className="form-select"
+                  value={form.es_puntual ? 'puntual' : 'recurrente'}
+                  onChange={e => {
+                    const puntual = e.target.value === 'puntual'
+                    setForm(prev => ({
+                      ...prev,
+                      es_puntual: puntual,
+                      mes_pago: puntual ? (prev.mes_pago || now.getMonth() + 2 > 12 ? 1 : now.getMonth() + 2) : null,
+                      anio_pago: puntual ? (prev.anio_pago || (now.getMonth() + 2 > 12 ? now.getFullYear() + 1 : now.getFullYear())) : null,
+                    }))
+                  }}
+                >
+                  <option value="recurrente">Recurrente (se paga cada mes)</option>
+                  <option value="puntual">Puntual (solo se paga un mes específico)</option>
+                </select>
+              </div>
+              {form.es_puntual && (
+                <div className="form-row">
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Mes límite de pago</label>
+                    <select
+                      className="form-select"
+                      value={form.mes_pago || ''}
+                      onChange={e => handleChange('mes_pago', parseInt(e.target.value))}
+                    >
+                      {MESES.map((m, i) => (
+                        <option key={i + 1} value={i + 1}>{m}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Año</label>
+                    <select
+                      className="form-select"
+                      value={form.anio_pago || now.getFullYear()}
+                      onChange={e => handleChange('anio_pago', parseInt(e.target.value))}
+                    >
+                      <option value={now.getFullYear()}>{now.getFullYear()}</option>
+                      <option value={now.getFullYear() + 1}>{now.getFullYear() + 1}</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="form-group">
             <label className="form-label">Notas (opcional)</label>

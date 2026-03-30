@@ -23,6 +23,8 @@ CREATE TABLE gastos (
   es_mensual BOOLEAN DEFAULT true, -- true = cada mes, false = pago único o anual
   categoria VARCHAR(50) DEFAULT 'fijo', -- fijo, ahorro, transporte, entretenimiento, credito
   activo BOOLEAN DEFAULT true,
+  mes_pago INTEGER CHECK (mes_pago >= 1 AND mes_pago <= 12), -- mes específico en que se debe pagar (NULL = recurrente)
+  anio_pago INTEGER, -- año específico en que se debe pagar (NULL = recurrente)
   notas TEXT,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()

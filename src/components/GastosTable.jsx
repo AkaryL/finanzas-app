@@ -53,7 +53,14 @@ export default function GastosTable({ data, pagosDeudas, onAdd, onUpdate, onDele
     return pagosDeudas.find(p => p.gasto_id === gastoId && p.mes === mesVista && p.anio === anioVista)
   }
 
-  const creditosActivos = gastos.filter(g => g.categoria === 'credito' && g.activo)
+  // Filtrar créditos: si tiene mes_pago/anio_pago, solo mostrar en ese mes. Si no, es recurrente.
+  const creditosActivos = gastos.filter(g => {
+    if (g.categoria !== 'credito' || !g.activo) return false
+    if (g.mes_pago && g.anio_pago) {
+      return g.mes_pago === mesVista && g.anio_pago === anioVista
+    }
+    return true // recurrente, mostrar siempre
+  })
   const creditosPagados = creditosActivos.filter(g => getPagoDeuda(g.id))
   const creditosPendientes = creditosActivos.filter(g => !getPagoDeuda(g.id))
 

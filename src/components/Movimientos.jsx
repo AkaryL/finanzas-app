@@ -157,7 +157,14 @@ export default function Movimientos({ config, gastosActivos, pagosDeudas = [], o
             const [mesSelStr, anioSelStr] = form.mesPago.split('-')
             const mesSel = parseInt(mesSelStr)
             const anioSel = parseInt(anioSelStr)
-            const creditos = gastosActivos.filter(g => g.categoria === 'credito')
+            const creditos = gastosActivos.filter(g => {
+              if (g.categoria !== 'credito') return false
+              // Si tiene mes/año puntual, solo mostrar si coincide con el mes seleccionado
+              if (g.mes_pago && g.anio_pago) {
+                return g.mes_pago === mesSel && g.anio_pago === anioSel
+              }
+              return true // recurrente
+            })
             const creditosSinPagar = creditos.filter(g =>
               !pagosDeudas.find(p => p.gasto_id === g.id && p.mes === mesSel && p.anio === anioSel)
             )
