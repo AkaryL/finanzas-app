@@ -284,8 +284,22 @@ export default function GastosTable({ data, pagosDeudas, onAdd, onUpdate, onDele
                       </span>
                     </td>
                     <td>
-                      {esCredito && g.activo ? (
-                        pago ? (
+                      {(() => {
+                        if (!esCredito || !g.activo) {
+                          return <span style={{ color: 'var(--text-dim)', fontSize: '0.8rem' }}>—</span>
+                        }
+                        // Si es puntual y no corresponde al mes actual
+                        const esPuntual = g.mes_pago && g.anio_pago
+                        const correspondeAlMes = !esPuntual || (g.mes_pago === mesActual && g.anio_pago === anioActual)
+                        if (esPuntual && !correspondeAlMes) {
+                          return (
+                            <span style={{ color: 'var(--text-dim)', fontSize: '0.78rem' }}>
+                              Pago en {MESES[g.mes_pago - 1]} {g.anio_pago}
+                            </span>
+                          )
+                        }
+                        // Corresponde al mes actual: mostrar pagado o pendiente
+                        return pago ? (
                           <span
                             className="pago-badge pagado"
                             onClick={() => onQuitarPago(g.id, mesVista, anioVista)}
@@ -304,9 +318,7 @@ export default function GastosTable({ data, pagosDeudas, onAdd, onUpdate, onDele
                             Pendiente
                           </span>
                         )
-                      ) : (
-                        <span style={{ color: 'var(--text-dim)', fontSize: '0.8rem' }}>—</span>
-                      )}
+                      })()}
                     </td>
                     <td>
                       <div className="actions-cell">
