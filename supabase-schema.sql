@@ -91,6 +91,7 @@ CREATE TABLE pagos_deudas (
   mes INTEGER NOT NULL CHECK (mes >= 1 AND mes <= 12),
   anio INTEGER NOT NULL,
   cuenta_origen VARCHAR(50) NOT NULL DEFAULT 'saldo_cuenta', -- saldo_cuenta, ahorro_auto, efectivo, otra
+  monto_pagado NUMERIC(12,2) NOT NULL DEFAULT 0, -- cuánto se ha abonado
   notas TEXT,
   fecha_pago TIMESTAMPTZ DEFAULT now(),
   created_at TIMESTAMPTZ DEFAULT now(),

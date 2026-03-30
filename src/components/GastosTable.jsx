@@ -58,9 +58,16 @@ export default function GastosTable({ data, pagosDeudas, onAdd, onUpdate, onDele
     return pagosDeudas.find(p => p.gasto_id === gastoId && p.mes === mes && p.anio === anio)
   }
 
+  // Helper: checar si un crédito está completamente pagado en un mes
+  const estaPagadoCompleto = (gastoId, montoTotal, mes, anio) => {
+    const pago = getPagoParaMes(gastoId, mes, anio)
+    if (!pago) return false
+    return parseFloat(pago.monto_pagado || 0) >= parseFloat(montoTotal)
+  }
+
   // Decidir mes inicial: si el mes actual no tiene pendientes, mostrar el siguiente
   const creditosMesActual = getCreditosPorMes(mesActual, anioActual)
-  const pendientesMesActual = creditosMesActual.filter(g => !getPagoParaMes(g.id, mesActual, anioActual))
+  const pendientesMesActual = creditosMesActual.filter(g => !estaPagadoCompleto(g.id, g.monto, mesActual, anioActual))
   const mesDefault = pendientesMesActual.length === 0 ? mesSiguiente : mesActual
   const anioDefault = pendientesMesActual.length === 0 ? anioSiguiente : anioActual
 
@@ -70,27 +77,30 @@ export default function GastosTable({ data, pagosDeudas, onAdd, onUpdate, onDele
 
   // Créditos para el mes seleccionado en la sección de deudas
   const creditosDelMes = getCreditosPorMes(mesVista, anioVista)
-  const creditosPagadosDelMes = creditosDelMes.filter(g => getPagoParaMes(g.id, mesVista, anioVista))
+  const creditosPagadosDelMes = creditosDelMes.filter(g => estaPagadoCompleto(g.id, g.monto, mesVista, anioVista))
 
   // Todos los créditos activos (para saber si mostrar la sección)
   const todosLosCreditos = gastos.filter(g => g.categoria === 'credito' && g.activo)
 
   // --- Lógica para la columna "Estado" en la tabla (independiente del tab) ---
-  // Cada crédito muestra su estado según SU mes correspondiente
   const getEstadoCredito = (g) => {
     if (g.categoria !== 'credito' || !g.activo) return { tipo: 'no-aplica' }
 
-    // Determinar en qué mes se debe pagar este crédito
     const mesPago = g.mes_pago || mesActual
     const anioPago = g.anio_pago || anioActual
-
     const pago = getPagoParaMes(g.id, mesPago, anioPago)
+    const montoTotal = parseFloat(g.monto)
+    const abonado = parseFloat(pago?.monto_pagado || 0)
 
-    if (pago) {
+    if (pago && abonado >= montoTotal) {
       return { tipo: 'pagado', pago, mesPago, anioPago }
     }
 
-    // Si es puntual y el mes de pago es futuro respecto al mes actual
+    if (pago && abonado > 0) {
+      return { tipo: 'abono', pago, abonado, montoTotal, restante: montoTotal - abonado, mesPago, anioPago }
+    }
+
+    // Si es puntual y el mes de pago es futuro
     if (g.mes_pago && g.anio_pago) {
       if (g.anio_pago > anioActual || (g.anio_pago === anioActual && g.mes_pago > mesActual)) {
         return { tipo: 'futuro', mesPago: g.mes_pago, anioPago: g.anio_pago }
@@ -201,8 +211,14 @@ export default function GastosTable({ data, pagosDeudas, onAdd, onUpdate, onDele
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {creditosDelMes.map(g => {
                   const pago = getPagoParaMes(g.id, mesVista, anioVista)
+                  const montoTotal = parseFloat(g.monto)
+                  const abonado = parseFloat(pago?.monto_pagado || 0)
+                  const pagadoCompleto = abonado >= montoTotal
+                  const tieneAbono = abonado > 0 && !pagadoCompleto
+                  const bgColor = pagadoCompleto ? 'rgba(0,212,170,0.06)' : tieneAbono ? 'rgba(255,170,0,0.06)' : 'rgba(255,71,87,0.06)'
+
                   return (
-                    <div key={g.id} className="movimiento-item" style={{ borderRadius: '10px', background: pago ? 'rgba(0,212,170,0.06)' : 'rgba(255,71,87,0.06)' }}>
+                    <div key={g.id} className="movimiento-item" style={{ borderRadius: '10px', background: bgColor }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                           <strong>{g.nombre}</strong>
@@ -216,17 +232,37 @@ export default function GastosTable({ data, pagosDeudas, onAdd, onUpdate, onDele
                           )}
                           {pago && (
                             <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
-                              Pagado de: {CUENTA_LABELS[pago.cuenta_origen] || pago.cuenta_origen}
+                              {CUENTA_LABELS[pago.cuenta_origen] || pago.cuenta_origen}
                               {pago.notas && ` · ${pago.notas}`}
                             </span>
                           )}
                         </div>
-                        <div style={{ fontSize: '0.85rem', color: 'var(--danger-light)', fontWeight: 600, marginTop: '4px' }}>
-                          {formatMoney(g.monto)}
+                        <div style={{ fontSize: '0.85rem', fontWeight: 600, marginTop: '4px' }}>
+                          {tieneAbono ? (
+                            <span>
+                              <span style={{ color: 'var(--accent)' }}>{formatMoney(abonado)}</span>
+                              <span style={{ color: 'var(--text-dim)' }}> / {formatMoney(montoTotal)}</span>
+                              <span style={{ color: 'var(--danger-light)', fontSize: '0.78rem', marginLeft: '8px' }}>
+                                Faltan {formatMoney(montoTotal - abonado)}
+                              </span>
+                            </span>
+                          ) : (
+                            <span style={{ color: pagadoCompleto ? 'var(--accent)' : 'var(--danger-light)' }}>
+                              {formatMoney(montoTotal)}
+                            </span>
+                          )}
                         </div>
+                        {tieneAbono && (
+                          <div className="progress-bar" style={{ marginTop: '6px', height: '4px' }}>
+                            <div
+                              className="progress-fill caution"
+                              style={{ width: `${(abonado / montoTotal) * 100}%` }}
+                            />
+                          </div>
+                        )}
                       </div>
                       <div>
-                        {pago ? (
+                        {pagadoCompleto ? (
                           <button
                             className="btn btn-sm"
                             style={{
@@ -238,6 +274,18 @@ export default function GastosTable({ data, pagosDeudas, onAdd, onUpdate, onDele
                             title="Desmarcar pago"
                           >
                             Pagado
+                          </button>
+                        ) : tieneAbono ? (
+                          <button
+                            className="btn btn-sm"
+                            style={{
+                              background: 'rgba(255,170,0,0.15)',
+                              color: '#e6a700',
+                              border: '1px solid rgba(255,170,0,0.3)',
+                            }}
+                            onClick={() => openPagoModal(g)}
+                          >
+                            Abonando
                           </button>
                         ) : (
                           <button
@@ -346,6 +394,14 @@ export default function GastosTable({ data, pagosDeudas, onAdd, onUpdate, onDele
                           style={{ cursor: 'default' }}
                         >
                           Pagado
+                        </span>
+                      )}
+                      {estado.tipo === 'abono' && (
+                        <span
+                          style={{ fontSize: '0.75rem', color: '#e6a700', fontWeight: 600 }}
+                          title={`${formatMoney(estado.abonado)} de ${formatMoney(estado.montoTotal)} (${MESES[estado.mesPago - 1]} ${estado.anioPago})`}
+                        >
+                          {formatMoney(estado.abonado)} / {formatMoney(estado.montoTotal)}
                         </span>
                       )}
                       {estado.tipo === 'futuro' && (

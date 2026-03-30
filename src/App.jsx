@@ -137,24 +137,54 @@ function App() {
     await updateGasto(id, { activo: !activo })
   }
 
-  const registrarPagoDeuda = async (gastoId, cuentaOrigen, notas = '', mesCustom = null, anioCustom = null) => {
+  const registrarPagoDeuda = async (gastoId, cuentaOrigen, notas = '', mesCustom = null, anioCustom = null, montoPagado = null) => {
     const now = new Date()
     const mes = mesCustom || (now.getMonth() + 1)
     const anio = anioCustom || now.getFullYear()
 
-    const { data, error } = await supabase
-      .from('pagos_deudas')
-      .insert([{ gasto_id: gastoId, mes, anio, cuenta_origen: cuentaOrigen, notas: notas || null }])
-      .select()
-      .single()
+    // Si no se pasa monto, usar el monto total del gasto (pago completo manual)
+    const gasto = gastos.find(g => g.id === gastoId)
+    const montoAbono = montoPagado ?? (gasto ? parseFloat(gasto.monto) : 0)
 
-    if (error) {
-      showToast('Error al registrar pago', 'error')
-      return
+    // Revisar si ya existe un registro para este gasto+mes+año
+    const existente = pagosDeudas.find(p => p.gasto_id === gastoId && p.mes === mes && p.anio === anio)
+
+    if (existente) {
+      // Sumar al abono existente
+      const nuevoMonto = parseFloat(existente.monto_pagado || 0) + montoAbono
+      const { error } = await supabase
+        .from('pagos_deudas')
+        .update({
+          monto_pagado: nuevoMonto,
+          cuenta_origen: cuentaOrigen,
+          notas: notas || existente.notas,
+          fecha_pago: new Date().toISOString(),
+        })
+        .eq('id', existente.id)
+
+      if (error) {
+        showToast('Error al registrar abono', 'error')
+        return
+      }
+
+      setPagosDeudas(prev => prev.map(p => p.id === existente.id ? { ...p, monto_pagado: nuevoMonto, cuenta_origen: cuentaOrigen, notas: notas || existente.notas } : p))
+      showToast(`Abono de ${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(montoAbono)} registrado`)
+    } else {
+      // Crear nuevo registro
+      const { data, error } = await supabase
+        .from('pagos_deudas')
+        .insert([{ gasto_id: gastoId, mes, anio, cuenta_origen: cuentaOrigen, monto_pagado: montoAbono, notas: notas || null }])
+        .select()
+        .single()
+
+      if (error) {
+        showToast('Error al registrar pago', 'error')
+        return
+      }
+
+      setPagosDeudas(prev => [...prev, data])
+      showToast(`Abono de ${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(montoAbono)} registrado`)
     }
-
-    setPagosDeudas(prev => [...prev, data])
-    showToast('Pago registrado')
   }
 
   const quitarPagoDeuda = async (gastoId, mesCustom = null, anioCustom = null) => {

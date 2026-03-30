@@ -122,7 +122,7 @@ export default function Movimientos({ config, gastosActivos, pagosDeudas = [], o
     // Si es pago adelantado y se seleccionó un crédito, registrar el pago de deuda
     if (form.tipo === 'pago_adelantado' && form.gastoId && onRegistrarPago) {
       const [mesStr, anioStr] = form.mesPago.split('-')
-      await onRegistrarPago(form.gastoId, form.origen, `Pago adelantado: ${form.descripcion}`, parseInt(mesStr), parseInt(anioStr))
+      await onRegistrarPago(form.gastoId, form.origen, `Pago adelantado: ${form.descripcion}`, parseInt(mesStr), parseInt(anioStr), montoNum)
     }
 
     setMovimientos(prev => [mov, ...prev])
@@ -225,7 +225,7 @@ export default function Movimientos({ config, gastosActivos, pagosDeudas = [], o
     // 6. Si es pago adelantado y se seleccionó un crédito, registrar pago de deuda
     if (form.tipo === 'pago_adelantado' && form.gastoId && onRegistrarPago) {
       const [mesStr, anioStr] = form.mesPago.split('-')
-      await onRegistrarPago(form.gastoId, form.origen, `Pago adelantado: ${form.descripcion}`, parseInt(mesStr), parseInt(anioStr))
+      await onRegistrarPago(form.gastoId, form.origen, `Pago adelantado: ${form.descripcion}`, parseInt(mesStr), parseInt(anioStr), montoNum)
     }
 
     // 7. Actualizar lista local
@@ -341,9 +341,11 @@ export default function Movimientos({ config, gastosActivos, pagosDeudas = [], o
               }
               return true // recurrente
             })
-            const creditosSinPagar = creditos.filter(g =>
-              !pagosDeudas.find(p => p.gasto_id === g.id && p.mes === mesSel && p.anio === anioSel)
-            )
+            const creditosSinPagar = creditos.filter(g => {
+              const pago = pagosDeudas.find(p => p.gasto_id === g.id && p.mes === mesSel && p.anio === anioSel)
+              if (!pago) return true // sin ningún pago
+              return parseFloat(pago.monto_pagado || 0) < parseFloat(g.monto) // abono parcial
+            })
             return (
               <>
               <div className="form-group">
@@ -361,7 +363,16 @@ export default function Movimientos({ config, gastosActivos, pagosDeudas = [], o
                   if (gastoId) {
                     const gasto = creditos.find(g => g.id === gastoId)
                     if (gasto) {
-                      setForm(prev => ({ ...prev, gastoId, descripcion: `Adelanto ${gasto.nombre}`, monto: String(gasto.monto) }))
+                      // Calcular lo que falta por pagar
+                      const pagoExistente = pagosDeudas.find(p => p.gasto_id === gastoId && p.mes === mesSel && p.anio === anioSel)
+                      const abonado = parseFloat(pagoExistente?.monto_pagado || 0)
+                      const restante = parseFloat(gasto.monto) - abonado
+                      setForm(prev => ({
+                        ...prev,
+                        gastoId,
+                        descripcion: prev.descripcion || `Adelanto ${gasto.nombre}`,
+                        monto: prev.monto || String(restante > 0 ? restante : gasto.monto),
+                      }))
                     } else {
                       handleChange('gastoId', gastoId)
                     }
@@ -370,9 +381,16 @@ export default function Movimientos({ config, gastosActivos, pagosDeudas = [], o
                   }
                 }}>
                   <option value="">No aplicar a ningún crédito</option>
-                  {creditosSinPagar.map(g => (
-                    <option key={g.id} value={g.id}>{g.nombre} - {formatMoney(g.monto)}</option>
-                  ))}
+                  {creditosSinPagar.map(g => {
+                    const pagoExistente = pagosDeudas.find(p => p.gasto_id === g.id && p.mes === mesSel && p.anio === anioSel)
+                    const abonado = parseFloat(pagoExistente?.monto_pagado || 0)
+                    const restante = parseFloat(g.monto) - abonado
+                    return (
+                      <option key={g.id} value={g.id}>
+                        {g.nombre} - {abonado > 0 ? `Faltan ${formatMoney(restante)} de ${formatMoney(g.monto)}` : formatMoney(g.monto)}
+                      </option>
+                    )
+                  })}
                 </select>
               </div>
             ) : null}
