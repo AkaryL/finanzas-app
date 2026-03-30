@@ -6,7 +6,7 @@ function formatMoney(n) {
 
 export default function Dashboard({ data, onUpdateConfig }) {
   const {
-    config, gastosQ1, gastosQ2,
+    config, gastosQ1, gastosQ2, getMontoEfectivo,
     totalQ1, totalQ2, totalGastos,
     ingresoMensual, sobrante, sobranteQ1, sobranteQ2,
   } = data
@@ -97,14 +97,21 @@ export default function Dashboard({ data, onUpdateConfig }) {
             <h3><span className="quincena-badge q1">1ra Quincena</span> Gastos del 1 al 15</h3>
             <span className="quincena-total">{formatMoney(totalQ1)}</span>
           </div>
-          {gastosQ1.map(g => (
-            <div key={g.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 18px', fontSize: '0.88rem' }}>
-              <span style={{ color: 'var(--text-secondary)' }}>
-                {g.nombre} <span style={{ color: 'var(--text-dim)', fontSize: '0.78rem' }}>- Día {g.dia_pago}</span>
-              </span>
-              <span style={{ color: 'var(--danger-light)', fontWeight: 600 }}>{formatMoney(g.monto)}</span>
-            </div>
-          ))}
+          {gastosQ1.map(g => {
+            const efectivo = getMontoEfectivo(g)
+            const tieneAbono = efectivo < parseFloat(g.monto)
+            return (
+              <div key={g.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 18px', fontSize: '0.88rem' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>
+                  {g.nombre} <span style={{ color: 'var(--text-dim)', fontSize: '0.78rem' }}>- Día {g.dia_pago}</span>
+                </span>
+                <span style={{ fontWeight: 600 }}>
+                  {tieneAbono && <span style={{ color: 'var(--text-dim)', textDecoration: 'line-through', fontSize: '0.78rem', marginRight: '6px' }}>{formatMoney(g.monto)}</span>}
+                  <span style={{ color: efectivo === 0 ? 'var(--accent)' : 'var(--danger-light)' }}>{formatMoney(efectivo)}</span>
+                </span>
+              </div>
+            )
+          })}
           <div className="quincena-remaining">
             Restante: <span className={sobranteQ1 >= 0 ? 'positive' : 'negative'}>{formatMoney(sobranteQ1)}</span>
           </div>
@@ -115,14 +122,21 @@ export default function Dashboard({ data, onUpdateConfig }) {
             <h3><span className="quincena-badge q2">2da Quincena</span> Gastos del 16 al 31</h3>
             <span className="quincena-total">{formatMoney(totalQ2)}</span>
           </div>
-          {gastosQ2.map(g => (
-            <div key={g.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 18px', fontSize: '0.88rem' }}>
-              <span style={{ color: 'var(--text-secondary)' }}>
-                {g.nombre} <span style={{ color: 'var(--text-dim)', fontSize: '0.78rem' }}>- Día {g.dia_pago}</span>
-              </span>
-              <span style={{ color: 'var(--danger-light)', fontWeight: 600 }}>{formatMoney(g.monto)}</span>
-            </div>
-          ))}
+          {gastosQ2.map(g => {
+            const efectivo = getMontoEfectivo(g)
+            const tieneAbono = efectivo < parseFloat(g.monto)
+            return (
+              <div key={g.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 18px', fontSize: '0.88rem' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>
+                  {g.nombre} <span style={{ color: 'var(--text-dim)', fontSize: '0.78rem' }}>- Día {g.dia_pago}</span>
+                </span>
+                <span style={{ fontWeight: 600 }}>
+                  {tieneAbono && <span style={{ color: 'var(--text-dim)', textDecoration: 'line-through', fontSize: '0.78rem', marginRight: '6px' }}>{formatMoney(g.monto)}</span>}
+                  <span style={{ color: efectivo === 0 ? 'var(--accent)' : 'var(--danger-light)' }}>{formatMoney(efectivo)}</span>
+                </span>
+              </div>
+            )
+          })}
           <div className="quincena-remaining">
             Restante: <span className={sobranteQ2 >= 0 ? 'positive' : 'negative'}>{formatMoney(sobranteQ2)}</span>
           </div>

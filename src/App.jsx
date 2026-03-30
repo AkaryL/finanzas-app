@@ -239,6 +239,7 @@ function App() {
     config,
     gastos,
     gastosActivos,
+    getMontoEfectivo,
     gastosQ1,
     gastosQ2,
     totalQ1,
