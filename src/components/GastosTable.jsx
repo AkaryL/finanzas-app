@@ -34,7 +34,7 @@ export default function GastosTable({ data, pagosDeudas, onAdd, onUpdate, onDele
   const [showModal, setShowModal] = useState(false)
   const [editingGasto, setEditingGasto] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(null)
-  const [pagoModal, setPagoModal] = useState(null) // gasto que se va a marcar como pagado
+  const [pagoModal, setPagoModal] = useState(null)
   const [cuentaPago, setCuentaPago] = useState('saldo_cuenta')
   const [notasPago, setNotasPago] = useState('')
 
@@ -44,38 +44,61 @@ export default function GastosTable({ data, pagosDeudas, onAdd, onUpdate, onDele
   const mesSiguiente = mesActual === 12 ? 1 : mesActual + 1
   const anioSiguiente = mesActual === 12 ? anioActual + 1 : anioActual
 
-  // Calcular créditos del mes actual para decidir qué mes mostrar por defecto
-  const creditosMesActual = gastos.filter(g => {
-    if (g.categoria !== 'credito' || !g.activo) return false
-    if (g.mes_pago && g.anio_pago) return g.mes_pago === mesActual && g.anio_pago === anioActual
-    return true
-  })
-  const todosPagadosMesActual = creditosMesActual.length === 0 || creditosMesActual.every(g =>
-    pagosDeudas.find(p => p.gasto_id === g.id && p.mes === mesActual && p.anio === anioActual)
-  )
-
-  // Si ya no hay pendientes este mes, mostrar el siguiente por defecto
-  const mesInicial = todosPagadosMesActual ? mesSiguiente : mesActual
-  const anioInicial = todosPagadosMesActual ? anioSiguiente : anioActual
-  const [mesVista, setMesVista] = useState(mesInicial)
-  const [anioVista, setAnioVista] = useState(anioInicial)
-  const mesLabel = MESES[mesVista - 1] + ' ' + anioVista
-
-  // Helpers para pagos
-  const getPagoDeuda = (gastoId) => {
-    return pagosDeudas.find(p => p.gasto_id === gastoId && p.mes === mesVista && p.anio === anioVista)
+  // --- Lógica para la sección "Pagos de Deudas" ---
+  // Función para obtener créditos que aplican a un mes específico
+  const getCreditosPorMes = (mes, anio) => {
+    return gastos.filter(g => {
+      if (g.categoria !== 'credito' || !g.activo) return false
+      if (g.mes_pago && g.anio_pago) return g.mes_pago === mes && g.anio_pago === anio
+      return true // recurrente
+    })
   }
 
-  // Filtrar créditos: si tiene mes_pago/anio_pago, solo mostrar en ese mes. Si no, es recurrente.
-  const creditosActivos = gastos.filter(g => {
-    if (g.categoria !== 'credito' || !g.activo) return false
-    if (g.mes_pago && g.anio_pago) {
-      return g.mes_pago === mesVista && g.anio_pago === anioVista
+  const getPagoParaMes = (gastoId, mes, anio) => {
+    return pagosDeudas.find(p => p.gasto_id === gastoId && p.mes === mes && p.anio === anio)
+  }
+
+  // Decidir mes inicial: si el mes actual no tiene pendientes, mostrar el siguiente
+  const creditosMesActual = getCreditosPorMes(mesActual, anioActual)
+  const pendientesMesActual = creditosMesActual.filter(g => !getPagoParaMes(g.id, mesActual, anioActual))
+  const mesDefault = pendientesMesActual.length === 0 ? mesSiguiente : mesActual
+  const anioDefault = pendientesMesActual.length === 0 ? anioSiguiente : anioActual
+
+  const [mesVista, setMesVista] = useState(mesDefault)
+  const [anioVista, setAnioVista] = useState(anioDefault)
+  const mesLabel = MESES[mesVista - 1] + ' ' + anioVista
+
+  // Créditos para el mes seleccionado en la sección de deudas
+  const creditosDelMes = getCreditosPorMes(mesVista, anioVista)
+  const creditosPagadosDelMes = creditosDelMes.filter(g => getPagoParaMes(g.id, mesVista, anioVista))
+
+  // Todos los créditos activos (para saber si mostrar la sección)
+  const todosLosCreditos = gastos.filter(g => g.categoria === 'credito' && g.activo)
+
+  // --- Lógica para la columna "Estado" en la tabla (independiente del tab) ---
+  // Cada crédito muestra su estado según SU mes correspondiente
+  const getEstadoCredito = (g) => {
+    if (g.categoria !== 'credito' || !g.activo) return { tipo: 'no-aplica' }
+
+    // Determinar en qué mes se debe pagar este crédito
+    const mesPago = g.mes_pago || mesActual
+    const anioPago = g.anio_pago || anioActual
+
+    const pago = getPagoParaMes(g.id, mesPago, anioPago)
+
+    if (pago) {
+      return { tipo: 'pagado', pago, mesPago, anioPago }
     }
-    return true // recurrente, mostrar siempre
-  })
-  const creditosPagados = creditosActivos.filter(g => getPagoDeuda(g.id))
-  const creditosPendientes = creditosActivos.filter(g => !getPagoDeuda(g.id))
+
+    // Si es puntual y el mes de pago es futuro respecto al mes actual
+    if (g.mes_pago && g.anio_pago) {
+      if (g.anio_pago > anioActual || (g.anio_pago === anioActual && g.mes_pago > mesActual)) {
+        return { tipo: 'futuro', mesPago: g.mes_pago, anioPago: g.anio_pago }
+      }
+    }
+
+    return { tipo: 'pendiente', mesPago, anioPago }
+  }
 
   const openAdd = () => {
     setEditingGasto(null)
@@ -115,8 +138,8 @@ export default function GastosTable({ data, pagosDeudas, onAdd, onUpdate, onDele
 
   return (
     <>
-      {/* Resumen de pagos del mes para créditos */}
-      {creditosActivos.length > 0 && (
+      {/* Sección Pagos de Deudas - siempre visible si hay créditos activos */}
+      {todosLosCreditos.length > 0 && (
         <div className="card">
           <div className="card-header">
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -127,8 +150,8 @@ export default function GastosTable({ data, pagosDeudas, onAdd, onUpdate, onDele
                   style={{
                     padding: '2px 10px',
                     fontSize: '0.72rem',
-                    background: mesVista === mesActual ? 'var(--accent)' : 'var(--bg-secondary)',
-                    color: mesVista === mesActual ? '#fff' : 'var(--text-secondary)',
+                    background: mesVista === mesActual && anioVista === anioActual ? 'var(--accent)' : 'var(--bg-secondary)',
+                    color: mesVista === mesActual && anioVista === anioActual ? '#fff' : 'var(--text-secondary)',
                     border: 'none',
                   }}
                   onClick={() => { setMesVista(mesActual); setAnioVista(anioActual) }}
@@ -140,8 +163,8 @@ export default function GastosTable({ data, pagosDeudas, onAdd, onUpdate, onDele
                   style={{
                     padding: '2px 10px',
                     fontSize: '0.72rem',
-                    background: mesVista === mesSiguiente ? 'var(--accent)' : 'var(--bg-secondary)',
-                    color: mesVista === mesSiguiente ? '#fff' : 'var(--text-secondary)',
+                    background: mesVista === mesSiguiente && anioVista === anioSiguiente ? 'var(--accent)' : 'var(--bg-secondary)',
+                    color: mesVista === mesSiguiente && anioVista === anioSiguiente ? '#fff' : 'var(--text-secondary)',
                     border: 'none',
                   }}
                   onClick={() => { setMesVista(mesSiguiente); setAnioVista(anioSiguiente) }}
@@ -150,89 +173,106 @@ export default function GastosTable({ data, pagosDeudas, onAdd, onUpdate, onDele
                 </button>
               </div>
             </div>
-            <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-              {creditosPagados.length}/{creditosActivos.length} pagados
-            </span>
+            {creditosDelMes.length > 0 && (
+              <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                {creditosPagadosDelMes.length}/{creditosDelMes.length} pagados
+              </span>
+            )}
           </div>
 
-          <div className="progress-bar" style={{ marginBottom: '20px' }}>
-            <div
-              className={`progress-fill ${creditosPagados.length === creditosActivos.length ? 'safe' : creditosPagados.length > 0 ? 'caution' : 'danger'}`}
-              style={{ width: `${(creditosPagados.length / creditosActivos.length) * 100}%` }}
-            />
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {creditosActivos.map(g => {
-              const pago = getPagoDeuda(g.id)
-              return (
-                <div key={g.id} className="movimiento-item" style={{ borderRadius: '10px', background: pago ? 'rgba(0,212,170,0.06)' : 'rgba(255,71,87,0.06)' }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                      <strong>{g.nombre}</strong>
-                      <span className="categoria-badge credito" style={{ fontSize: '0.7rem' }}>
-                        Día {g.dia_pago}
-                      </span>
-                      {pago && (
-                        <span style={{
-                          fontSize: '0.72rem',
-                          color: 'var(--text-dim)',
-                        }}>
-                          Pagado de: {CUENTA_LABELS[pago.cuenta_origen] || pago.cuenta_origen}
-                          {pago.notas && ` · ${pago.notas}`}
-                        </span>
-                      )}
-                    </div>
-                    <div style={{ fontSize: '0.85rem', color: 'var(--danger-light)', fontWeight: 600, marginTop: '4px' }}>
-                      {formatMoney(g.monto)}
-                    </div>
-                  </div>
-                  <div>
-                    {pago ? (
-                      <button
-                        className="btn btn-sm"
-                        style={{
-                          background: 'rgba(0,212,170,0.15)',
-                          color: 'var(--accent)',
-                          border: '1px solid var(--accent-dim)',
-                        }}
-                        onClick={() => onQuitarPago(g.id, mesVista, anioVista)}
-                        title="Desmarcar pago"
-                      >
-                        Pagado
-                      </button>
-                    ) : (
-                      <button
-                        className="btn btn-sm"
-                        style={{
-                          background: 'rgba(255,71,87,0.15)',
-                          color: 'var(--danger-light)',
-                          border: '1px solid var(--danger)',
-                        }}
-                        onClick={() => openPagoModal(g)}
-                      >
-                        Pendiente
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-
-          {creditosPagados.length === creditosActivos.length && (
+          {creditosDelMes.length === 0 ? (
             <div style={{
-              marginTop: '16px',
-              padding: '12px 16px',
-              borderRadius: '10px',
-              background: 'rgba(0,212,170,0.1)',
-              color: 'var(--accent-light)',
-              fontSize: '0.88rem',
+              padding: '20px',
               textAlign: 'center',
-              fontWeight: 500,
+              color: 'var(--text-dim)',
+              fontSize: '0.88rem',
             }}>
-              Todas las deudas de {mesLabel} están pagadas
+              Sin deudas pendientes en {mesLabel}
             </div>
+          ) : (
+            <>
+              <div className="progress-bar" style={{ marginBottom: '20px' }}>
+                <div
+                  className={`progress-fill ${creditosPagadosDelMes.length === creditosDelMes.length ? 'safe' : creditosPagadosDelMes.length > 0 ? 'caution' : 'danger'}`}
+                  style={{ width: `${(creditosPagadosDelMes.length / creditosDelMes.length) * 100}%` }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {creditosDelMes.map(g => {
+                  const pago = getPagoParaMes(g.id, mesVista, anioVista)
+                  return (
+                    <div key={g.id} className="movimiento-item" style={{ borderRadius: '10px', background: pago ? 'rgba(0,212,170,0.06)' : 'rgba(255,71,87,0.06)' }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                          <strong>{g.nombre}</strong>
+                          <span className="categoria-badge credito" style={{ fontSize: '0.7rem' }}>
+                            Día {g.dia_pago}
+                          </span>
+                          {g.mes_pago && g.anio_pago && (
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>
+                              (pago único)
+                            </span>
+                          )}
+                          {pago && (
+                            <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
+                              Pagado de: {CUENTA_LABELS[pago.cuenta_origen] || pago.cuenta_origen}
+                              {pago.notas && ` · ${pago.notas}`}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: '0.85rem', color: 'var(--danger-light)', fontWeight: 600, marginTop: '4px' }}>
+                          {formatMoney(g.monto)}
+                        </div>
+                      </div>
+                      <div>
+                        {pago ? (
+                          <button
+                            className="btn btn-sm"
+                            style={{
+                              background: 'rgba(0,212,170,0.15)',
+                              color: 'var(--accent)',
+                              border: '1px solid var(--accent-dim)',
+                            }}
+                            onClick={() => onQuitarPago(g.id, mesVista, anioVista)}
+                            title="Desmarcar pago"
+                          >
+                            Pagado
+                          </button>
+                        ) : (
+                          <button
+                            className="btn btn-sm"
+                            style={{
+                              background: 'rgba(255,71,87,0.15)',
+                              color: 'var(--danger-light)',
+                              border: '1px solid var(--danger)',
+                            }}
+                            onClick={() => openPagoModal(g)}
+                          >
+                            Pendiente
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {creditosPagadosDelMes.length === creditosDelMes.length && (
+                <div style={{
+                  marginTop: '16px',
+                  padding: '12px 16px',
+                  borderRadius: '10px',
+                  background: 'rgba(0,212,170,0.1)',
+                  color: 'var(--accent-light)',
+                  fontSize: '0.88rem',
+                  textAlign: 'center',
+                  fontWeight: 500,
+                }}>
+                  Todas las deudas de {mesLabel} están pagadas
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
@@ -270,8 +310,7 @@ export default function GastosTable({ data, pagosDeudas, onAdd, onUpdate, onDele
             </thead>
             <tbody>
               {gastos.map(g => {
-                const pago = g.categoria === 'credito' ? getPagoDeuda(g.id) : null
-                const esCredito = g.categoria === 'credito'
+                const estado = getEstadoCredito(g)
                 return (
                   <tr key={g.id} className={g.activo ? '' : 'inactive-row'}>
                     <td>
@@ -297,41 +336,31 @@ export default function GastosTable({ data, pagosDeudas, onAdd, onUpdate, onDele
                       </span>
                     </td>
                     <td>
-                      {(() => {
-                        if (!esCredito || !g.activo) {
-                          return <span style={{ color: 'var(--text-dim)', fontSize: '0.8rem' }}>—</span>
-                        }
-                        // Si es puntual y no corresponde al mes actual
-                        const esPuntual = g.mes_pago && g.anio_pago
-                        const correspondeAlMes = !esPuntual || (g.mes_pago === mesActual && g.anio_pago === anioActual)
-                        if (esPuntual && !correspondeAlMes) {
-                          return (
-                            <span style={{ color: 'var(--text-dim)', fontSize: '0.78rem' }}>
-                              Pago en {MESES[g.mes_pago - 1]} {g.anio_pago}
-                            </span>
-                          )
-                        }
-                        // Corresponde al mes actual: mostrar pagado o pendiente
-                        return pago ? (
-                          <span
-                            className="pago-badge pagado"
-                            onClick={() => onQuitarPago(g.id, mesVista, anioVista)}
-                            title={`Pagado de ${CUENTA_LABELS[pago.cuenta_origen] || pago.cuenta_origen}. Click para desmarcar.`}
-                            style={{ cursor: 'pointer' }}
-                          >
-                            Pagado
-                          </span>
-                        ) : (
-                          <span
-                            className="pago-badge pendiente"
-                            onClick={() => openPagoModal(g)}
-                            title="Marcar como pagado"
-                            style={{ cursor: 'pointer' }}
-                          >
-                            Pendiente
-                          </span>
-                        )
-                      })()}
+                      {estado.tipo === 'no-aplica' && (
+                        <span style={{ color: 'var(--text-dim)', fontSize: '0.8rem' }}>—</span>
+                      )}
+                      {estado.tipo === 'pagado' && (
+                        <span
+                          className="pago-badge pagado"
+                          title={`Pagado de ${CUENTA_LABELS[estado.pago.cuenta_origen] || estado.pago.cuenta_origen} (${MESES[estado.mesPago - 1]} ${estado.anioPago})`}
+                          style={{ cursor: 'default' }}
+                        >
+                          Pagado
+                        </span>
+                      )}
+                      {estado.tipo === 'futuro' && (
+                        <span style={{ color: 'var(--text-dim)', fontSize: '0.78rem' }}>
+                          Pago en {MESES[estado.mesPago - 1]} {estado.anioPago}
+                        </span>
+                      )}
+                      {estado.tipo === 'pendiente' && (
+                        <span
+                          className="pago-badge pendiente"
+                          style={{ cursor: 'default' }}
+                        >
+                          Pendiente
+                        </span>
+                      )}
                     </td>
                     <td>
                       <div className="actions-cell">
