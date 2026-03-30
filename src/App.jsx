@@ -227,6 +227,11 @@ function App() {
   const gastosActivos = gastos.filter(g => g.activo)
   const gastosQ1 = gastosActivos.filter(g => g.quincena === 1)
   const gastosQ2 = gastosActivos.filter(g => g.quincena === 2)
+  // Totales originales (para tab Gastos - muestra lo que debes en total)
+  const totalQ1Original = gastosQ1.reduce((sum, g) => sum + parseFloat(g.monto), 0)
+  const totalQ2Original = gastosQ2.reduce((sum, g) => sum + parseFloat(g.monto), 0)
+  const totalGastosOriginal = totalQ1Original + totalQ2Original
+  // Totales efectivos (para Dashboard - muestra lo que falta por pagar)
   const totalQ1 = gastosQ1.reduce((sum, g) => sum + getMontoEfectivo(g), 0)
   const totalQ2 = gastosQ2.reduce((sum, g) => sum + getMontoEfectivo(g), 0)
   const totalGastos = totalQ1 + totalQ2
@@ -245,6 +250,9 @@ function App() {
     totalQ1,
     totalQ2,
     totalGastos,
+    totalQ1Original,
+    totalQ2Original,
+    totalGastosOriginal,
     ingresoMensual,
     sobrante,
     sobranteQ1,

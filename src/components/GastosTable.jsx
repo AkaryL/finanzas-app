@@ -30,7 +30,7 @@ const CUENTA_LABELS = {
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
 
 export default function GastosTable({ data, pagosDeudas, onAdd, onUpdate, onDelete, onToggle, onRegistrarPago, onQuitarPago }) {
-  const { gastos, totalQ1, totalQ2, totalGastos } = data
+  const { gastos, totalQ1Original, totalQ2Original, totalGastosOriginal } = data
   const [showModal, setShowModal] = useState(false)
   const [editingGasto, setEditingGasto] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(null)
@@ -331,11 +331,11 @@ export default function GastosTable({ data, pagosDeudas, onAdd, onUpdate, onDele
           <span className="card-title">Mis Gastos ({gastos.length})</span>
           <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-              Q1: <strong style={{ color: 'var(--danger-light)' }}>{formatMoney(totalQ1)}</strong>
+              Q1: <strong style={{ color: 'var(--danger-light)' }}>{formatMoney(totalQ1Original)}</strong>
               {' | '}
-              Q2: <strong style={{ color: 'var(--danger-light)' }}>{formatMoney(totalQ2)}</strong>
+              Q2: <strong style={{ color: 'var(--danger-light)' }}>{formatMoney(totalQ2Original)}</strong>
               {' | '}
-              Total: <strong style={{ color: 'var(--danger)' }}>{formatMoney(totalGastos)}</strong>
+              Total: <strong style={{ color: 'var(--danger)' }}>{formatMoney(totalGastosOriginal)}</strong>
             </span>
             <button className="btn btn-primary btn-sm" onClick={openAdd}>
               + Agregar Gasto
