@@ -187,6 +187,47 @@ function App() {
     }
   }
 
+  const revertirPagoDeuda = async (gastoId, montoRevertir, mesCustom = null, anioCustom = null) => {
+    const now = new Date()
+    const mes = mesCustom || (now.getMonth() + 1)
+    const anio = anioCustom || now.getFullYear()
+
+    const existente = pagosDeudas.find(p => p.gasto_id === gastoId && p.mes === mes && p.anio === anio)
+    if (!existente) return
+
+    const nuevoMonto = parseFloat(existente.monto_pagado || 0) - montoRevertir
+
+    if (nuevoMonto <= 0) {
+      // Si el monto queda en 0 o negativo, eliminar el registro completo
+      const { error } = await supabase
+        .from('pagos_deudas')
+        .delete()
+        .eq('id', existente.id)
+
+      if (error) {
+        showToast('Error al revertir pago de deuda', 'error')
+        return
+      }
+
+      setPagosDeudas(prev => prev.filter(p => p.id !== existente.id))
+    } else {
+      // Reducir el monto abonado
+      const { error } = await supabase
+        .from('pagos_deudas')
+        .update({ monto_pagado: nuevoMonto, fecha_pago: new Date().toISOString() })
+        .eq('id', existente.id)
+
+      if (error) {
+        showToast('Error al revertir pago de deuda', 'error')
+        return
+      }
+
+      setPagosDeudas(prev => prev.map(p => p.id === existente.id ? { ...p, monto_pagado: nuevoMonto } : p))
+    }
+
+    showToast('Pago de deuda revertido')
+  }
+
   const quitarPagoDeuda = async (gastoId, mesCustom = null, anioCustom = null) => {
     const now = new Date()
     const mes = mesCustom || (now.getMonth() + 1)
@@ -317,6 +358,7 @@ function App() {
           pagosDeudas={pagosDeudas}
           onConfigUpdate={(updates) => setConfig(prev => ({ ...prev, ...updates }))}
           onRegistrarPago={registrarPagoDeuda}
+          onRevertirPago={revertirPagoDeuda}
         />
       )}
 

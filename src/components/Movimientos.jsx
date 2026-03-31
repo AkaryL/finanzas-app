@@ -31,7 +31,7 @@ const TIPO_CLASSES = {
   retiro_ahorro: 'gasto',
 }
 
-export default function Movimientos({ config, gastosActivos, pagosDeudas = [], onConfigUpdate, onRegistrarPago }) {
+export default function Movimientos({ config, gastosActivos, pagosDeudas = [], onConfigUpdate, onRegistrarPago, onRevertirPago }) {
   const [movimientos, setMovimientos] = useState([])
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
@@ -74,16 +74,27 @@ export default function Movimientos({ config, gastosActivos, pagosDeudas = [], o
     const montoNum = parseFloat(form.monto)
     if (!montoNum || !form.descripcion.trim()) return
 
+    // Preparar datos del movimiento
+    const movData = {
+      tipo: form.tipo,
+      descripcion: form.descripcion.trim(),
+      monto: montoNum,
+      origen: form.tipo === 'ingreso_extra' ? null : form.origen,
+      destino: form.destino.trim() || null,
+    }
+
+    // Si es pago adelantado, guardar referencia al gasto para poder revertir
+    if (form.tipo === 'pago_adelantado' && form.gastoId && form.mesPago) {
+      const [mesStr, anioStr] = form.mesPago.split('-')
+      movData.gasto_id = form.gastoId
+      movData.mes_pago = parseInt(mesStr)
+      movData.anio_pago = parseInt(anioStr)
+    }
+
     // Guardar movimiento
     const { data: mov, error } = await supabase
       .from('movimientos')
-      .insert([{
-        tipo: form.tipo,
-        descripcion: form.descripcion.trim(),
-        monto: montoNum,
-        origen: form.tipo === 'ingreso_extra' ? null : form.origen,
-        destino: form.destino.trim() || null,
-      }])
+      .insert([movData])
       .select()
       .single()
 
@@ -196,21 +207,39 @@ export default function Movimientos({ config, gastosActivos, pagosDeudas = [], o
     if (deltaSaldo !== 0) configUpdates.saldo_cuenta = saldoActual + deltaSaldo
     if (deltaAhorro !== 0) configUpdates.ahorro_actual_auto = ahorroActual + deltaAhorro
 
-    // 4. Actualizar movimiento en DB
+    // 4. Si el movimiento original era pago_adelantado con gasto_id, revertir ese abono
+    if (movOriginal.tipo === 'pago_adelantado' && movOriginal.gasto_id && onRevertirPago) {
+      await onRevertirPago(movOriginal.gasto_id, parseFloat(movOriginal.monto), movOriginal.mes_pago, movOriginal.anio_pago)
+    }
+
+    // 5. Preparar datos de actualización
+    const updateData = {
+      tipo: form.tipo,
+      descripcion: form.descripcion.trim(),
+      monto: montoNum,
+      origen: form.tipo === 'ingreso_extra' ? null : form.origen,
+      destino: form.destino.trim() || null,
+      gasto_id: null,
+      mes_pago: null,
+      anio_pago: null,
+    }
+
+    if (form.tipo === 'pago_adelantado' && form.gastoId && form.mesPago) {
+      const [mesStr, anioStr] = form.mesPago.split('-')
+      updateData.gasto_id = form.gastoId
+      updateData.mes_pago = parseInt(mesStr)
+      updateData.anio_pago = parseInt(anioStr)
+    }
+
+    // 6. Actualizar movimiento en DB
     const { error } = await supabase
       .from('movimientos')
-      .update({
-        tipo: form.tipo,
-        descripcion: form.descripcion.trim(),
-        monto: montoNum,
-        origen: form.tipo === 'ingreso_extra' ? null : form.origen,
-        destino: form.destino.trim() || null,
-      })
+      .update(updateData)
       .eq('id', editingId)
 
     if (error) return
 
-    // 5. Actualizar configuración si hay cambios
+    // 7. Actualizar configuración si hay cambios
     if (Object.keys(configUpdates).length > 0) {
       const { error: configError } = await supabase
         .from('configuracion')
@@ -222,20 +251,16 @@ export default function Movimientos({ config, gastosActivos, pagosDeudas = [], o
       }
     }
 
-    // 6. Si es pago adelantado y se seleccionó un crédito, registrar pago de deuda
+    // 8. Si es pago adelantado y se seleccionó un crédito, registrar el nuevo pago de deuda
     if (form.tipo === 'pago_adelantado' && form.gastoId && onRegistrarPago) {
       const [mesStr, anioStr] = form.mesPago.split('-')
       await onRegistrarPago(form.gastoId, form.origen, `Pago adelantado: ${form.descripcion}`, parseInt(mesStr), parseInt(anioStr), montoNum)
     }
 
-    // 7. Actualizar lista local
+    // 9. Actualizar lista local
     setMovimientos(prev => prev.map(m => m.id === editingId ? {
       ...m,
-      tipo: form.tipo,
-      descripcion: form.descripcion.trim(),
-      monto: montoNum,
-      origen: form.tipo === 'ingreso_extra' ? null : form.origen,
-      destino: form.destino.trim() || null,
+      ...updateData,
     } : m))
 
     setForm(emptyForm)
@@ -271,6 +296,11 @@ export default function Movimientos({ config, gastosActivos, pagosDeudas = [], o
       if (!configError) {
         onConfigUpdate(configUpdates)
       }
+    }
+
+    // 4. Si era pago adelantado, revertir el abono en pagos_deudas
+    if (mov.tipo === 'pago_adelantado' && mov.gasto_id && onRevertirPago) {
+      await onRevertirPago(mov.gasto_id, parseFloat(mov.monto), mov.mes_pago, mov.anio_pago)
     }
 
     setMovimientos(prev => prev.filter(m => m.id !== mov.id))
